@@ -10,7 +10,7 @@ on:
 
 jobs:
   image:
-    if: github.event.label.name == 'run-ci' || github.event_name != 'pull_request_target'
+    if: github.repository == 'ps5-linux/ps5-linux-image' && (github.event.label.name == 'run-ci' || github.event_name != 'pull_request_target')
     permissions:
       contents: write
     uses: ./.github/workflows/build-image.yml

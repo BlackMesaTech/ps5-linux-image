@@ -17,13 +17,13 @@ usage() {
     echo "Usage: $0 [--distro <distro>] [--kernel <path>] [--img-size <MB>] [--clean]"
     echo ""
     echo "Options:"
-    echo "  --distro     Distribution to build: ubuntu2604, arch, cachyos, fedora, proxmox, debian, bazzite, bazzite-deck, batocera, all (default: ubuntu2604)"
+    echo "  --distro     Distribution to build: ubuntu2604, arch, cachyos, fedora, proxmox, debian, bazzite, bazzite-deck, steamos, batocera, all (default: ubuntu2604)"
     echo "  --kernel     Path to kernel source directory (default: auto-clone to work/linux/)"
     echo "  --img-size   Disk image size in MB (default: 12000, 32000 for --distro all)"
     echo "  --clean      Remove all cached build artifacts and start from scratch"
     echo "  --clean-only Remove all cached build artifacts and exit"
     echo "  --kernel-only  Build and package the kernel only, then exit"
-    echo "  --patches-ref  Branch, tag, or commit SHA for patches (default: v1.2)"
+    echo "  --patches-ref  Branch, tag, or commit SHA for patches (default: $PATCHES_REF)"
     exit 1
 }
 
@@ -300,6 +300,22 @@ else
 
     KERNEL_SRC="$(cd "$KERNEL_SRC" && pwd)"
 
+    # The 7.2.3 patch config embeds ps5_vcn.bin from the adjacent patches
+    # checkout. /src is a separate bind mount inside the builder, so expose
+    # that firmware directory at the path named by CONFIG_EXTRA_FIRMWARE_DIR.
+    FIRMWARE_MOUNT=()
+    EXTRA_FIRMWARE=$(sed -n 's/^CONFIG_EXTRA_FIRMWARE="\([^"]*\)"/\1/p' "$KERNEL_SRC/.config")
+    EXTRA_FIRMWARE_DIR=$(sed -n 's/^CONFIG_EXTRA_FIRMWARE_DIR="\([^"]*\)"/\1/p' "$KERNEL_SRC/.config")
+    if [ -n "$EXTRA_FIRMWARE" ] && [ "$EXTRA_FIRMWARE_DIR" = "../ps5-linux-patches/firmware" ]; then
+        for blob in $EXTRA_FIRMWARE; do
+            if [ ! -f "$PATCHES_DIR/firmware/$blob" ]; then
+                echo "Missing kernel firmware: $PATCHES_DIR/firmware/$blob" >&2
+                exit 1
+            fi
+        done
+        FIRMWARE_MOUNT=(-v "$PATCHES_DIR/firmware:/ps5-linux-patches/firmware:ro")
+    fi
+
     rm -f "$KERNEL_OUT"/*.deb "$KERNEL_OUT"/*.pkg.tar.zst "$KERNEL_OUT"/*.rpm
 
     run_stage "Build kernel builder image" \
@@ -309,6 +325,7 @@ else
     run_stage "Compile kernel" \
         docker run --rm --platform "$KERNEL_BUILDER_PLATFORM" --name "$DOCKER_NAME" \
             -v "$KERNEL_SRC":/src \
+            "${FIRMWARE_MOUNT[@]}" \
             -v "$KERNEL_OUT":/out \
             -v "$CCACHE_DIR":/ccache \
             ps5-kernel-builder

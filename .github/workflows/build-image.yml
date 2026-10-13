@@ -9,11 +9,18 @@ on:
         default: 'ubuntu2604'
         type: choice
         options: [all, ubuntu2604, arch, cachyos, fedora, proxmox, debian, bazzite, bazzite-deck, steamos]
+      patches_ref:
+        description: 'PS5 kernel patch tag, branch, or commit (empty = builder default)'
+        default: ''
+        type: string
   workflow_call:
     inputs:
       distro:
         type: string
         default: 'ubuntu2604'
+      patches_ref:
+        type: string
+        default: ''
     secrets:
       R2_ACCESS_KEY_ID:
         required: true
@@ -26,7 +33,7 @@ on:
 
 jobs:
   matrix:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     outputs:
       distros: ${{ steps.set.outputs.distros }}
     steps:
@@ -41,7 +48,7 @@ jobs:
 
   build:
     needs: matrix
-    runs-on: self-hosted
+    runs-on: [self-hosted, linux, x64, ps5-image]
     timeout-minutes: 720
     permissions:
       contents: write
@@ -92,8 +99,10 @@ jobs:
           path: image
 
       - name: Build ${{ matrix.distro }} image
+        env:
+          PATCHES_REF: ${{ inputs.patches_ref || '' }}
         run: |
-          bash image/build_image.sh --distro "${{ matrix.distro }}"
+          bash image/build_image.sh --distro "${{ matrix.distro }}" --patches-ref "$PATCHES_REF"
 
       - name: Set version info
         id: version
@@ -116,7 +125,7 @@ jobs:
             > image/output/ps5-${{ matrix.distro }}.img.xz
 
       - name: Upload to R2
-        if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target'
+        if: github.repository == 'ps5-linux/ps5-linux-image' && github.event_name != 'pull_request' && github.event_name != 'pull_request_target'
         env:
           RCLONE_CONFIG_R2_TYPE: s3
           RCLONE_CONFIG_R2_PROVIDER: Cloudflare
@@ -127,6 +136,16 @@ jobs:
         run: |
           rclone copyto image/output/ps5-${{ matrix.distro }}.img.xz \
             "r2:${{ secrets.R2_BUCKET }}/ps5-${{ matrix.distro }}.img.xz"
+
+      - name: Preserve image on this runner
+        if: github.repository == 'BlackMesaTech/ps5-linux-image'
+        run: |
+          dest="$HOME/ps5-linux-images/${GITHUB_RUN_ID}/${{ matrix.distro }}"
+          mkdir -p "$dest"
+          cp image/output/ps5-${{ matrix.distro }}.img.xz "$dest/"
+          sha256sum "$dest/ps5-${{ matrix.distro }}.img.xz" > "$dest/SHA256SUMS"
+          echo "Image saved at \`$dest/ps5-${{ matrix.distro }}.img.xz\`" >> "$GITHUB_STEP_SUMMARY"
+          cat "$dest/SHA256SUMS" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Save build metadata
         run: |
@@ -147,7 +166,7 @@ jobs:
   release:
     needs: build
     runs-on: self-hosted
-    if: github.event_name != 'pull_request' && github.event_name != 'pull_request_target'
+    if: github.repository == 'ps5-linux/ps5-linux-image' && github.event_name != 'pull_request' && github.event_name != 'pull_request_target'
     permissions:
       contents: write
     steps:

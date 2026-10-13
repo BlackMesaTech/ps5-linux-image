@@ -1,6 +1,6 @@
 # PS5 Linux Image Builder
 
-Builds bootable Linux USB images for PlayStation 5 using Docker containers. Supports Ubuntu 26.04, Arch, CachyOS (Gamescope + Steam), Fedora (GNOME), individually or as a multi-distro image with kexec switching.
+Builds Linux USB images for PlayStation 5 using Docker containers. Supports Ubuntu 26.04, Arch, CachyOS (Gamescope + Steam), Fedora (GNOME), SteamOS 3, and other distributions, individually or as a multi-distro image with kexec switching.
 
 ## Prerequisites
 
@@ -20,19 +20,14 @@ newgrp docker
 # Build a single Ubuntu 26.04 image
 ./build_image.sh --distro ubuntu2604
 
-OR
-
 # Build CachyOS (Arch-based, Gamescope + Steam Big Picture)
 ./build_image.sh --distro cachyos
-
-OR
-
-OR
 
 # Build Fedora (GNOME desktop)
 ./build_image.sh --distro fedora
 
-OR
+# Build SteamOS 3 from the Steam Deck recovery rootfs
+./build_image.sh --distro steamos
 
 # Build a multi-distro image (ubuntu2604 + arch + cachyos)
 ./build_image.sh --distro all
@@ -50,12 +45,29 @@ sudo dd if=output/ps5-ubuntu2604.img of=/dev/sdX bs=4M status=progress
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--distro` | `ubuntu2604`, `arch`, `cachyos`, `fedora`, or `all` | `ubuntu2604` |
+| `--distro` | `ubuntu2604`, `arch`, `cachyos`, `fedora`, `steamos`, or `all` (other recipes are also available under `distros/`) | `ubuntu2604` |
 | `--kernel` | Path to kernel source directory | auto-clone version selected by PS5 patch set |
 | `--img-size` | Disk image size in MB | `12000` (`32000` for `all`) |
 | `--clean` | Remove all cached build artifacts and start fresh | off |
 | `--kernel-only` | Build and package the kernel only, then exit | off |
-| `--patches-ref` | Branch, tag, or commit SHA for patches | `v1.2` |
+| `--patches-ref` | Branch, tag, or commit SHA for patches | `kernel-7.1.7-56922cf` |
+
+## SteamOS 3 with the 7.2.3 PS5 kernel patches
+
+The SteamOS recipe extracts Valve's Steam Deck recovery root filesystem, adds
+the PS5 kernel package and modules, and creates `output/ps5-steamos.img`.
+To build against the 7.2.3 patch revision currently under evaluation:
+
+```bash
+./build_image.sh --distro steamos \
+  --patches-ref 753c7936dcb079bfeaaa0bb19dfc495744266500
+```
+
+If this checkout has previously built a different patch revision, add
+`--clean` so the cached kernel source and packages are rebuilt together.
+The GitHub Actions **Build Image** workflow accepts the same patch ref when a
+self-hosted runner is configured. Building the image does not add support for
+new PS5 system software versions to the separate Linux loader.
 
 ## Caching
 
@@ -98,6 +110,7 @@ All verbose output goes to `build.log`. The terminal shows a spinner with live p
 | Ubuntu 26.04 (Resolute) | GNOME | `.deb` | systemd |
 | Arch | Sway | `.pkg.tar.zst` | systemd |
 | CachyOS | Gamescope + Steam Big Picture (Arch + `[cachyos]` repo, no v3 migration in image build) | `.pkg.tar.zst` | systemd |
+| SteamOS 3 | Steam gaming interface and desktop from the Steam Deck recovery rootfs | `.pkg.tar.zst` | systemd |
 
 ## Multi-distro Image
 
